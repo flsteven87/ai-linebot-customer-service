@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
 from app.config import settings
-from app.services.linebot_service import LineBotService
+from app.services.linebot_service import get_line_service, LineBotService
 
 router = APIRouter(prefix="/linebot", tags=["LINE Bot"])
 

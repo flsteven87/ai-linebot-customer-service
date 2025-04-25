@@ -2,19 +2,48 @@
 LINE Bot service for handling LINE webhook events.
 """
 from linebot.v3 import WebhookHandler
-from linebot.v3.messaging import MessagingApi
+from linebot.v3.messaging import MessagingApi, Configuration, ApiClient
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.v3.messaging import TextMessage
 from linebot.v3.messaging.models import ReplyMessageRequest, PushMessageRequest
 from linebot.v3.messaging.exceptions import ApiException
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 import traceback
 import asyncio
 
+from app.config import settings
 from app.services.agent_service import AgentService
+from app.utils.storage import memory_storage
 
 logger = logging.getLogger(__name__)
+
+# LINE Bot 服務實例緩存
+_instance = None
+
+async def get_line_service() -> 'LineBotService':
+    """
+    獲取 LINE Bot 服務實例的工廠函數。
+    如果實例已存在則返回現有實例，否則創建新實例。
+    
+    Returns:
+        LineBotService: 已初始化的 LINE Bot 服務實例
+    """
+    global _instance
+    
+    if _instance is not None:
+        return _instance
+    
+    # 建立新實例
+    configuration = Configuration(access_token=settings.CHANNEL_ACCESS_TOKEN)
+    handler = WebhookHandler(settings.CHANNEL_SECRET)
+    
+    with ApiClient(configuration) as api_client:
+        line_api = MessagingApi(api_client)
+        service = LineBotService(line_api, handler)
+        await service.initialize()
+        _instance = service
+        return service
 
 class LineBotService:
     """
@@ -85,8 +114,17 @@ class LineBotService:
             
             logger.info(f"Received message from {user_id}: {text}")
             
+            # 獲取或創建用戶的活躍對話
+            conversation = memory_storage.get_active_conversation(user_id)
+            
+            # 記錄用戶訊息
+            memory_storage.add_message(conversation.id, text, "user")
+            
             # 使用 Agent Service 處理訊息
             response = await self.agent_service.process_message(user_id, text)
+            
+            # 記錄機器人回覆
+            memory_storage.add_message(conversation.id, response, "bot")
             
             # 回覆用戶
             self.reply_text(reply_token, response)
@@ -95,18 +133,15 @@ class LineBotService:
             logger.error(f"處理訊息時發生錯誤: {e}")
             logger.debug(f"錯誤詳情: {traceback.format_exc()}")
             # 發生錯誤時，回覆一個友好的錯誤訊息
-            self.reply_text(event.reply_token, "抱歉，我暫時無法理解您的請求。請稍後再試。")
-    
-    # 保留舊的同步處理方法作為備用
-    def _process_text_message(self, event: MessageEvent) -> None:
-        """
-        Process text messages from users (同步版本，已棄用).
-        
-        Args:
-            event (MessageEvent): The message event from LINE.
-        """
-        # 將請求轉發到非同步處理方法
-        asyncio.create_task(self._async_process_text_message(event))
+            error_message = "抱歉，我暫時無法理解您的請求。請稍後再試。"
+            self.reply_text(event.reply_token, error_message)
+            
+            # 如果對話已經創建，記錄錯誤回覆
+            try:
+                conversation = memory_storage.get_active_conversation(event.source.user_id)
+                memory_storage.add_message(conversation.id, error_message, "bot")
+            except Exception as storage_error:
+                logger.error(f"記錄錯誤回覆時出現問題: {storage_error}")
     
     def reply_text(self, reply_token: str, text: str) -> Dict[str, Any]:
         """
