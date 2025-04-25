@@ -21,9 +21,11 @@ app.add_middleware(
 
 # Import and include API routers
 from app.api.v1.health import router as health_router
+from app.api.v1.linebot import router as linebot_router
 
 # Include routers
 app.include_router(health_router, prefix="/api/v1")
+app.include_router(linebot_router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
