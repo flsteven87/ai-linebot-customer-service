@@ -10,6 +10,9 @@ from linebot.v3.messaging.exceptions import ApiException
 from typing import Dict, Any, List
 import logging
 import traceback
+import asyncio
+
+from app.services.agent_service import AgentService
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +31,18 @@ class LineBotService:
         """
         self.line_api = line_api
         self.handler = handler
+        self.agent_service = AgentService()
         
         # Set up event handlers
         self._setup_event_handlers()
         
         logger.info("LineBotService initialized")
     
+    async def initialize(self):
+        """初始化服務，包括所有 Agent。"""
+        await self.agent_service.initialize()
+        logger.info("Agent 服務初始化完成")
+        
     def _setup_event_handlers(self):
         """
         Set up handlers for different types of LINE events.
@@ -41,7 +50,8 @@ class LineBotService:
         # Handle text messages
         @self.handler.add(MessageEvent, message=TextMessageContent)
         def handle_text_message(event):
-            self._process_text_message(event)
+            # 使用非同步處理，但在同步環境下執行
+            asyncio.create_task(self._async_process_text_message(event))
     
     def handle_webhook(self, body: str, signature: str) -> None:
         """
@@ -61,14 +71,13 @@ class LineBotService:
             logger.debug(f"Error traceback: {traceback.format_exc()}")
             raise
     
-    def _process_text_message(self, event: MessageEvent) -> None:
+    async def _async_process_text_message(self, event: MessageEvent) -> None:
         """
-        Process text messages from users.
+        非同步處理文字訊息。
         
         Args:
             event (MessageEvent): The message event from LINE.
         """
-        # For now, just echo the message back
         try:
             text = event.message.text
             reply_token = event.reply_token
@@ -76,11 +85,28 @@ class LineBotService:
             
             logger.info(f"Received message from {user_id}: {text}")
             
-            # Create a response message
-            self.reply_text(reply_token, f"您傳送的訊息：{text}")
+            # 使用 Agent Service 處理訊息
+            response = await self.agent_service.process_message(user_id, text)
+            
+            # 回覆用戶
+            self.reply_text(reply_token, response)
+            
         except Exception as e:
-            logger.error(f"Error processing text message: {e}")
-            logger.debug(f"Error traceback: {traceback.format_exc()}")
+            logger.error(f"處理訊息時發生錯誤: {e}")
+            logger.debug(f"錯誤詳情: {traceback.format_exc()}")
+            # 發生錯誤時，回覆一個友好的錯誤訊息
+            self.reply_text(event.reply_token, "抱歉，我暫時無法理解您的請求。請稍後再試。")
+    
+    # 保留舊的同步處理方法作為備用
+    def _process_text_message(self, event: MessageEvent) -> None:
+        """
+        Process text messages from users (同步版本，已棄用).
+        
+        Args:
+            event (MessageEvent): The message event from LINE.
+        """
+        # 將請求轉發到非同步處理方法
+        asyncio.create_task(self._async_process_text_message(event))
     
     def reply_text(self, reply_token: str, text: str) -> Dict[str, Any]:
         """
