@@ -3,7 +3,8 @@ Application configuration.
 """
 import os
 from typing import Optional
-from pydantic import BaseSettings, PostgresDsn
+from pydantic_settings import BaseSettings
+from pydantic import PostgresDsn
 
 class Settings(BaseSettings):
     """
@@ -23,12 +24,14 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: Optional[PostgresDsn] = None
     
-    class Config:
-        """
-        Configuration for Settings.
-        """
-        env_file = ".env"
-        case_sensitive = True
+    # Ngrok settings
+    NGROK_AUTHTOKEN: Optional[str] = None
+    
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+        "extra": "ignore"  # 允許額外的環境變數
+    }
 
 # Create global settings object
 settings = Settings() 
