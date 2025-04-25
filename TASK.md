@@ -3,7 +3,7 @@
 ## Core Infrastructure
 - [x] 創建基本專案結構和文件 (2025-04-25)
 - [x] 實作健康檢查 API (2025-04-25)
-- [ ] 設置 LINE webhook 驗證與 echo 功能
+- [x] 設置 LINE webhook 驗證與 echo 功能
 - [ ] 建立資料庫連接與模型定義
 
 ## MVP 功能
